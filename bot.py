@@ -12,7 +12,7 @@ parser.add_argument('--max_frames', help='Limit maximum number of frames in vide
 args = parser.parse_args()
 
 bot = telebot.TeleBot(args.token)
-net_mutex = Lock()
+mutex = Lock()
 
 
 class HairSegmentation(object):
@@ -39,8 +39,6 @@ class HairSegmentation(object):
         blob = cv.dnn.blobFromImage(frame, 1.0 / 255, (512, 512), swapRB=True)
         blob = np.concatenate((blob, prev_mask.reshape(1, 1, 512, 512)), axis=1)
 
-        net_mutex.acquire()
-
         for i in range(num_runs):
             # Copy previous frame mask to a new tensor
             blob[0, 3] = prev_mask
@@ -54,8 +52,6 @@ class HairSegmentation(object):
 
             prev_mask = self._mix_prev_mask(prev_mask, mask)
 
-        net_mutex.release()
-
         mask = cv.resize(prev_mask, (frame.shape[1], frame.shape[0]))
         lum = cv.cvtColor(frame, cv.COLOR_BGR2GRAY) / 255
         mask *= lum
@@ -66,55 +62,55 @@ class HairSegmentation(object):
         return result
 
 
-    def process_video(self, cap, out_cap):
-        prev_mask = np.zeros((512, 512), dtype=np.float32)
-        color = np.zeros((384, 384, 3), dtype=np.uint8)
-        color[:, :, 0] = 255
+    # def process_video(self, cap, out_cap):
+    #     prev_mask = np.zeros((512, 512), dtype=np.float32)
+    #     color = np.zeros((384, 384, 3), dtype=np.uint8)
+    #     color[:, :, 0] = 255
 
-        num_frames = 0
-        while cap.isOpened() and num_frames < args.max_frames:
-            has_frame, frame = cap.read()
-            if not has_frame:
-                break
-            num_frames += 1
+    #     num_frames = 0
+    #     while cap.isOpened() and num_frames < args.max_frames:
+    #         has_frame, frame = cap.read()
+    #         if not has_frame:
+    #             break
+    #         num_frames += 1
 
-            # Prepare input
-            blob = cv.dnn.blobFromImage(frame, 1.0 / 255, (512, 512), swapRB=True)
+    #         # Prepare input
+    #         blob = cv.dnn.blobFromImage(frame, 1.0 / 255, (512, 512), swapRB=True)
 
-            # Copy previous frame mask to a new tensor
-            blob = np.concatenate((blob, prev_mask.reshape(1, 1, 512, 512)), axis=1)
+    #         # Copy previous frame mask to a new tensor
+    #         blob = np.concatenate((blob, prev_mask.reshape(1, 1, 512, 512)), axis=1)
 
-            # Run network
-            self.net.setInput(blob)
-            out = self.net.forward()
+    #         # Run network
+    #         self.net.setInput(blob)
+    #         out = self.net.forward()
 
-            out = softmax(out, axis=1)
-            mask = out[0, 1]
+    #         out = softmax(out, axis=1)
+    #         mask = out[0, 1]
 
-            prev_mask = self._mix_prev_mask(prev_mask, mask)
+    #         prev_mask = self._mix_prev_mask(prev_mask, mask)
 
-            mask = cv.resize(prev_mask, (frame.shape[1], frame.shape[0]))
-            lum = cv.cvtColor(frame, cv.COLOR_BGR2GRAY) / 255
-            mask *= lum
+    #         mask = cv.resize(prev_mask, (frame.shape[1], frame.shape[0]))
+    #         lum = cv.cvtColor(frame, cv.COLOR_BGR2GRAY) / 255
+    #         mask *= lum
 
-            mask = np.repeat(np.expand_dims(mask, axis=-1), 3, axis=-1)
-            frame = (mask * (color.astype(np.float32) - frame) + frame).astype(np.uint8)
+    #         mask = np.repeat(np.expand_dims(mask, axis=-1), 3, axis=-1)
+    #         frame = (mask * (color.astype(np.float32) - frame) + frame).astype(np.uint8)
 
-            out_cap.write(frame)
+    #         out_cap.write(frame)
 
 
 model = HairSegmentation()
 colors = {}
 
-def process_video(inp_file_name, out_file_name):
-    cap = cv.VideoCapture(inp_file_name)
-    out = cv.VideoWriter(out_file_name, cv.VideoWriter_fourcc(*'mp4v'), 30, (384, 384))
-    model.process(cap, out)
+# def process_video(inp_file_name, out_file_name):
+#     cap = cv.VideoCapture(inp_file_name)
+#     out = cv.VideoWriter(out_file_name, cv.VideoWriter_fourcc(*'mp4v'), 30, (384, 384))
+#     model.process(cap, out)
 
 
-def send_video(message, video_path):
-    with open(video_path, 'rb') as f:
-        bot.send_video(chat_id=message.chat.id, video=f)
+# def send_video(message, video_path):
+#     with open(video_path, 'rb') as f:
+#         bot.send_video(chat_id=message.chat.id, video=f)
 
 
 def get_image(message):
@@ -130,27 +126,30 @@ def send_image(message, img):
     bot.send_photo(message.chat.id, outputbuf)
 
 
-@bot.message_handler(content_types=['video_note'])
-def process_image(message):
-    f = bot.get_file(message.video_note.file_id)
-    data = bot.download_file(f.file_path)
+# @bot.message_handler(content_types=['video_note'])
+# def process_image(message):
+#     f = bot.get_file(message.video_note.file_id)
+#     data = bot.download_file(f.file_path)
 
-    inp_file_name = 'tmp_in.mp4'
-    out_file_name = 'tmp_out.mp4'
-    with open(inp_file_name, 'wb') as f:
-        f.write(data)
+#     inp_file_name = 'tmp_in.mp4'
+#     out_file_name = 'tmp_out.mp4'
+#     with open(inp_file_name, 'wb') as f:
+#         f.write(data)
 
-    process_video(inp_file_name, out_file_name)
-    send_video(message, out_file_name)
+#     process_video(inp_file_name, out_file_name)
+#     send_video(message, out_file_name)
 
 
 @bot.message_handler(content_types=['photo'])
 def process_image(message):
+    mutex.acquire()
+
     color = colors.get(message.chat.id, [255, 0, 0])
 
     img = get_image(message)
     stylized = model.process_image(img, color)
     send_image(message, stylized)
+    mutex.release()
 
 
 @bot.message_handler(commands=['color'])
