@@ -5,10 +5,12 @@ import cv2 as cv
 import telebot
 import io
 from threading import Lock
+import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--token', help='Telegram bot token', required=True)
 parser.add_argument('--max_frames', help='Limit maximum number of frames in video per request', default=300)
+parser.add_argument('--delay', help='Limit time in seconds for interactions', type=int, default=0)
 args = parser.parse_args()
 
 bot = telebot.TeleBot(args.token)
@@ -101,6 +103,7 @@ class HairSegmentation(object):
 
 model = HairSegmentation()
 colors = {}
+timestamps = {}
 
 # def process_video(inp_file_name, out_file_name):
 #     cap = cv.VideoCapture(inp_file_name)
@@ -142,9 +145,19 @@ def send_image(message, img):
 
 @bot.message_handler(content_types=['photo'])
 def process_image(message):
+    chat_id = message.chat.id
+
+    now = time.time()
+    timestamp = timestamps.get(chat_id, 0)
+    if now - timestamp < args.delay:
+        bot.send_message(chat_id, f"Try again after {args.delay - int(now - timestamp)} seconds")
+        return
+
+    timestamps[chat_id] = now
+
     mutex.acquire()
 
-    color = colors.get(message.chat.id, [255, 0, 0])
+    color = colors.get(chat_id, [255, 0, 0])
 
     img = get_image(message)
     stylized = model.process_image(img, color)
